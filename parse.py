@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""
-Determine whether sentences are grammatical under a CFG, using Earley's algorithm.
-(Starting from this basic recognizer, you should write a probabilistic parser
-that reconstructs the highest-probability parse of each given sentence.)
-"""
 
-# Recognizer code by Arya McCarthy, Alexandra DeLucia, Jason Eisner, 2020-10, 2021-10.
-# This code is hereby released to the public domain.
 
 from __future__ import annotations
 import argparse
@@ -142,34 +135,16 @@ class EarleyChart:
         mid = item.start_position   # start position of this item = end position of item to its left
         for customer in self.cols[mid].all():  # could you eliminate this inefficient linear search?
             if customer.next_symbol() == item.rule.lhs:
-                new_item = customer.with_dot_advanced()
-                self.cols[position].push(new_item)
-                log.debug(f"\tAttached to get: {new_item} in column {position}")
-                self.profile["ATTACH"] += 1
-
+                # new_item = customer.with_dot_advanced()
+                # self.cols[position].push(new_item)
+                # log.debug(f"\tAttached to get: {new_item} in column {position}")
+                # self.profile["ATTACH"] += 1
+            new_weight = customer.weight + item.rule.weight
+            new_item = customer.with_dot_advanced(new_weight, (customer, item))
+            self.cols[position].push(new_item)
 
 class Agenda:
-    """An agenda of items that need to be processed.  Newly built items 
-    may be enqueued for processing by `push()`, and should eventually be 
-    dequeued by `pop()`.
-
-    This implementation of an agenda also remembers which items have
-    been pushed before, even if they have subsequently been popped.
-    This is because already popped items must still be found by
-    duplicate detection and as customers for attach.  
-
-    (In general, AI algorithms often maintain a "closed list" (or
-    "chart") of items that have already been popped, in addition to
-    the "open list" (or "agenda") of items that are still waiting to pop.)
-
-    In Earley's algorithm, each end position has its own agenda -- a column
-    in the parse chart.  (This contrasts with agenda-based parsing, which uses
-    a single agenda for all items.)
-
-    Standardly, each column's agenda is implemented as a FIFO queue
-    with duplicate detection, and that is what is implemented here.
-    However, other implementations are possible -- and could be useful
-    when dealing with weights, backpointers, and optimizations.
+    """
 
     >>> a = Agenda()
     >>> a.push(3)
@@ -197,12 +172,6 @@ class Agenda:
         self._index: Dict[Item, int] = {}  # stores index of an item if it was ever pushed
         self._next = 0                     # index of first item that has not yet been popped
 
-        # Note: There are other possible designs.  For example, self._index doesn't really
-        # have to store the index; it could be changed from a dictionary to a set.  
-        # 
-        # However, we provided this design because there are multiple reasonable ways to extend
-        # this design to store weights and backpointers.  That additional information could be
-        # stored either in self._items or in self._index.
 
     def __len__(self) -> int:
         """Returns number of items that are still waiting to be popped.
@@ -211,7 +180,7 @@ class Agenda:
 
     def push(self, item: Item) -> None:
         """Add (enqueue) the item, unless it was previously added."""
-        if item not in self._index:    # O(1) lookup in hash table
+        if item not in self._index or item.weight < self._items[self._index[item]].weight:
             self._items.append(item)
             self._index[item] = len(self._items) - 1
             
@@ -316,7 +285,8 @@ class Item:
     # We don't store the end_position, which corresponds to the column
     # that the item is in, although you could store it redundantly for 
     # debugging purposes if you wanted.
-
+    weight: float = 0.0  # tracking weights added
+    backpointer: Optional[Tuple[Item, Item]] = None  # Backpointers added
     def next_symbol(self) -> Optional[str]:
         """What's the next, unprocessed symbol (terminal, non-terminal, or None) in this partially matched rule?"""
         assert 0 <= self.dot_position <= len(self.rule.rhs)
@@ -325,10 +295,15 @@ class Item:
         else:
             return self.rule.rhs[self.dot_position]
 
-    def with_dot_advanced(self) -> Item:
-        if self.next_symbol() is None:
-            raise IndexError("Can't advance the dot past the end of the rule")
-        return Item(rule=self.rule, dot_position=self.dot_position + 1, start_position=self.start_position)
+    def with_dot_advanced(self, new_weight: float, backpointer=None) -> Item: #Adjusted this function
+        """Advance the dot and return a new item with updated weight and backpointer."""
+        return Item(
+            rule=self.rule,
+            dot_position=self.dot_position + 1,
+            start_position=self.start_position,
+            weight=new_weight,
+            backpointer=backpointer,
+        )
 
     def __repr__(self) -> str:
         """Human-readable representation string used when printing this item."""
@@ -339,6 +314,12 @@ class Item:
         dotted_rule = f"{self.rule.lhs} → {' '.join(rhs)}"
         return f"({self.start_position}, {dotted_rule})"  # matches notation on slides
 
+def print_parse(item: Item) -> str:
+    """Recursively print the parse tree from backpointers."""
+    if not item.backpointer:
+        return f"({item.rule.lhs} {' '.join(item.rule.rhs)})"
+    left, right = item.backpointer
+    return f"({item.rule.lhs} {print_parse(left)} {print_parse(right)})"
 
 def main():
     # Parse the command-line arguments
@@ -351,15 +332,14 @@ def main():
         for sentence in f.readlines():
             sentence = sentence.strip()
             if sentence != "":  # skip blank lines
-                # analyze the sentence
-                log.debug("="*70)
-                log.debug(f"Parsing sentence: {sentence}")
                 chart = EarleyChart(sentence.split(), grammar, progress=args.progress)
-                # print the result
-                print(
-                    f"'{sentence}' is {'accepted' if chart.accepted() else 'rejected'} by {args.grammar}"
-                )
-                log.debug(f"Profile of work done: {chart.profile}")
+                for item in chart.cols[-1].all():
+                    if item.rule.lhs == args.start_symbol and item.next_symbol() is None:
+                        # Print the parse tree with weight
+                        print(f"{print_parse(item)} (Weight: {item.weight:.4f})")
+                        break
+                else:
+                    print("NONE")
 
 
 if __name__ == "__main__":
