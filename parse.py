@@ -221,48 +221,22 @@ class Grammar:
         return symbol in self._expansions
 
 
-# A dataclass is a class that provides some useful defaults for you. If you define
-# the data that the class should hold, it will automatically make things like an
-# initializer and an equality function.  This is just a shortcut.  
-# More info here: https://docs.python.org/3/library/dataclasses.html
-# Using a dataclass here lets us declare that instances are "frozen" (immutable),
-# and therefore can be hashed and used as keys in a dictionary.
+
 @dataclass(frozen=True)
 class Rule:
-    """
-    A grammar rule has a left-hand side (lhs), a right-hand side (rhs), and a weight.
 
-    >>> r = Rule('S',('NP','VP'),3.14)
-    >>> r
-    S → NP VP
-    >>> r.weight
-    3.14
-    >>> r.weight = 2.718
-    Traceback (most recent call last):
-    dataclasses.FrozenInstanceError: cannot assign to field 'weight'
-    """
     lhs: str
     rhs: Tuple[str, ...]
     weight: float
 
     def __repr__(self) -> str:
-        """Complete string used to show this rule instance at the command line"""
-        # Note: You might want to modify this to include the weight.
         return f"{self.lhs} → {' '.join(self.rhs)}"
 
-    
-# We particularly want items to be immutable, since they will be hashed and 
-# used as keys in a dictionary (for duplicate detection).  
 @dataclass(frozen=True)
 class Item:
-    """An item in the Earley parse chart, representing one or more subtrees
-    that could yield a particular substring."""
     rule: Rule
     dot_position: int
     start_position: int
-    # We don't store the end_position, which corresponds to the column
-    # that the item is in, although you could store it redundantly for 
-    # debugging purposes if you wanted.
     weight: float = 0.0  # tracking weights added
     backpointer: Optional[Tuple[Any, Any]] = None   # Backpointers added
     children: Tuple[Any, ...] = ()
