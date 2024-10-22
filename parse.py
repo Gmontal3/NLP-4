@@ -56,8 +56,8 @@ class EarleyChart:
     """A chart for Earley's algorithm."""
     
     def __init__(self, tokens: List[str], grammar: Grammar, progress: bool = False) -> None:
-        """Create the chart based on parsing `tokens` with `grammar`.  
-        `progress` says whether to display progress bars as we parse."""
+        """Create the chart based on parsing tokens with grammar.  
+        progress says whether to display progress bars as we parse."""
         self.tokens = tokens
         self.grammar = grammar
         self.progress = progress
@@ -89,8 +89,8 @@ class EarleyChart:
         # Processing earlier entries in the column may extend the column
         # with later entries, which will be processed as well.
         # 
-        # The iterator over numbered columns is `enumerate(self.cols)`.  
-        # Wrapping this iterator in the `tqdm` call provides a progress bar.
+        # The iterator over numbered columns is enumerate(self.cols).  
+        # Wrapping this iterator in the tqdm call provides a progress bar.
         for i, column in tqdm.tqdm(enumerate(self.cols),
                                    total=len(self.cols),
                                    disable=not self.progress):
@@ -115,7 +115,7 @@ class EarleyChart:
     def _predict(self, nonterminal: str, position: int) -> None:
         """Start looking for this nonterminal at the given position."""
         for rule in self.grammar.expansions(nonterminal):
-            new_item = Item(rule, dot_position=0, start_position=position)
+            new_item = Item(rule, dot_position=0, start_position=position, weight=rule.weight)
             self.cols[position].push(new_item)
             self.profile["PREDICT"] += 1
 
@@ -144,7 +144,7 @@ class Agenda:
 
     def __len__(self) -> int:
         """Returns number of items that are still waiting to be popped.
-        Enables `len(my_agenda)`."""
+        Enables len(my_agenda)."""
         return len(self._items) - self._next
 
     def push(self, item: Item) -> None:
@@ -243,7 +243,7 @@ class Rule:
     """
     lhs: str
     rhs: Tuple[str, ...]
-    weight: float = 0.0
+    weight: float
 
     def __repr__(self) -> str:
         """Complete string used to show this rule instance at the command line"""
@@ -278,8 +278,6 @@ class Item:
     def with_dot_advanced(self, weight_increment: float = 0.0, child=None) -> Item:
         new_dot_position = self.dot_position + 1
         new_weight = self.weight + weight_increment
-        if new_dot_position == len(self.rule.rhs):
-            new_weight += self.rule.weight
         new_children = self.children + (child,)
         return Item(
             rule=self.rule,
@@ -296,7 +294,7 @@ class Item:
         rhs = list(self.rule.rhs)  # Make a copy.
         rhs.insert(self.dot_position, DOT)
         dotted_rule = f"{self.rule.lhs} → {' '.join(rhs)}"
-        return f"({self.start_position}, {dotted_rule}, weight={self.weight:.4f})"  # matches notation on slides
+        return f"({self.start_position}, {dotted_rule}, weight={self.weight:.3f})"  # matches notation on slides
 
 def print_parse(item: Item) -> str:
     if len(item.children) == 0:
@@ -341,8 +339,8 @@ def main():
 
             # Print the parse if found; otherwise, print "NONE"
             if best_item:
-                weight_str = Decimal(best_item.weight).quantize(Decimal('1.00000000000000'))
-                print(f"{print_parse(best_item)} {weight_str}")
+                # Print the parse tree with cumulative weight
+                print(f"{print_parse(best_item)} {best_item.weight}")
             else:
                 print("NONE")
 
