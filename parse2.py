@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 from __future__ import annotations
 import argparse
 import logging
@@ -12,7 +11,7 @@ from collections import Counter
 from typing import Counter as CounterType, Iterable, List, Optional, Dict, Tuple
 from typing import Any
 
-log = logging.getLogger(Path(__file__).stem)  # For usage, see findsim.py in earlier assignment.
+log = logging.getLogger(Path(__file__).stem)
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments"""
@@ -55,12 +54,18 @@ class EarleyChart:
     """A chart for Earley's algorithm."""
     
     def __init__(self, tokens: List[str], grammar: Grammar, progress: bool = False) -> None:
-        """Create the chart based on parsing `tokens` with `grammar`.  
-        `progress` says whether to display progress bars as we parse."""
+        """Create the chart based on parsing tokens with grammar.  
+        progress says whether to display progress bars as we parse."""
         self.tokens = tokens
         self.grammar = grammar
         self.progress = progress
         self.profile: CounterType[str] = Counter()
+
+        # Batch duplicate check: Track predicted nonterminals per column
+        self.predicted_nonterminals = [set() for _ in range(len(self.tokens) + 1)]
+
+        # Vocabulary specialization: Use a specialized grammar
+        self.grammar = self.grammar.specialize(self.tokens)
 
         self.cols: List[Agenda]
         self._run_earley()    # run Earley's algorithm to construct self.cols
@@ -85,11 +90,6 @@ class EarleyChart:
         self._predict(self.grammar.start_symbol, 0)
 
         # We'll go column by column, and within each column row by row.
-        # Processing earlier entries in the column may extend the column
-        # with later entries, which will be processed as well.
-        # 
-        # The iterator over numbered columns is `enumerate(self.cols)`.  
-        # Wrapping this iterator in the `tqdm` call provides a progress bar.
         for i, column in tqdm.tqdm(enumerate(self.cols),
                                    total=len(self.cols),
                                    disable=not self.progress):
@@ -97,15 +97,15 @@ class EarleyChart:
             log.debug(f"Processing items in column {i}")
             while column:    # while agenda isn't empty
                 item = column.pop()   # dequeue the next unprocessed item
-                next = item.next_symbol();
-                if next is None:
+                next_symbol = item.next_symbol()
+                if next_symbol is None:
                     # Attach this complete constituent to its customers
                     log.debug(f"{item} => ATTACH")
                     self._attach(item, i)   
-                elif self.grammar.is_nonterminal(next):
+                elif self.grammar.is_nonterminal(next_symbol):
                     # Predict the nonterminal after the dot
                     log.debug(f"{item} => PREDICT")
-                    self._predict(next, i)
+                    self._predict(next_symbol, i)
                 else:
                     # Try to scan the terminal after the dot
                     log.debug(f"{item} => SCAN")
@@ -113,6 +113,11 @@ class EarleyChart:
 
     def _predict(self, nonterminal: str, position: int) -> None:
         """Start looking for this nonterminal at the given position."""
+        # Batch duplicate check: Skip if already predicted in this column
+        if nonterminal in self.predicted_nonterminals[position]:
+            return  # Already predicted this nonterminal at this position
+        self.predicted_nonterminals[position].add(nonterminal)
+
         for rule in self.grammar.expansions(nonterminal):
             new_item = Item(rule, dot_position=0, start_position=position)
             self.cols[position].push(new_item)
@@ -132,35 +137,33 @@ class EarleyChart:
                 new_item = customer.with_dot_advanced(weight_increment=item.weight, child=item)
                 self.cols[position].push(new_item)
                 self.profile["ATTACH"] += 1
+
 class Agenda:
-
-
     def __init__(self) -> None:
         self._items: List[Item] = []       # list of all items that were *ever* pushed
         self._index: Dict[Item, int] = {}  # stores index of an item if it was ever pushed
         self._next = 0                     # index of first item that has not yet been popped
 
-
     def __len__(self) -> int:
         """Returns number of items that are still waiting to be popped.
-        Enables `len(my_agenda)`."""
+        Enables len(my_agenda)."""
         return len(self._items) - self._next
 
     def push(self, item: Item) -> None:
-            """Add (enqueue) the item, unless it was previously added with a lower weight."""
-            idx = self._index.get(item)
-            if idx is None:
-                self._items.append(item)
-                self._index[item] = len(self._items) - 1
+        """Add (enqueue) the item, unless it was previously added with a lower weight."""
+        idx = self._index.get(item)
+        if idx is None:
+            self._items.append(item)
+            self._index[item] = len(self._items) - 1
+        else:
+            existing_item = self._items[idx]
+            if item.weight < existing_item.weight:
+                self._items[idx] = item
+                if idx < self._next:
+                    self._next = idx
             else:
-                existing_item = self._items[idx]
-                if item.weight < existing_item.weight:
-                    self._items[idx] = item
-                    if idx < self._next:
-                        self._next = idx
-                else:
-                    pass
-            
+                pass
+
     def pop(self) -> Item:
         """Returns one of the items that was waiting to be popped (dequeued).
         Raises IndexError if there are no items waiting."""
@@ -176,7 +179,7 @@ class Agenda:
         return self._items
 
     def __repr__(self):
-        """Provide a human-readable string REPResentation of this Agenda."""
+        """Provide a human-readable string representation of this Agenda."""
         next = self._next
         return f"{self.__class__.__name__}({self._items[:next]}; {self._items[next:]})"
 
@@ -187,14 +190,13 @@ class Grammar:
         adding rules from the specified files if any."""
         self.start_symbol = start_symbol
         self._expansions: Dict[str, List[Rule]] = {}    # maps each LHS to the list of rules that expand it
+        self.terminals: set = set()
         # Read the input grammar files
         for file in files:
             self.add_rules_from_file(file)
 
     def add_rules_from_file(self, file: Path) -> None:
-        """Add rules to this grammar from a file (one rule per line).
-        Each rule is preceded by a normalized probability p,
-        and we take -log2(p) to be the rule's weight."""
+        """Add rules to this grammar from a file (one rule per line)."""
         with open(file, "r") as f:
             for line in f:
                 # remove any comment from end of line, and any trailing whitespace
@@ -210,35 +212,38 @@ class Grammar:
                 if lhs not in self._expansions:
                     self._expansions[lhs] = []
                 self._expansions[lhs].append(rule)
+                # Collect terminals
+                for symbol in rhs:
+                    if not self.is_nonterminal(symbol):
+                        self.terminals.add(symbol)
 
     def expansions(self, lhs: str) -> Iterable[Rule]:
         """Return an iterable collection of all rules with a given lhs"""
-        return self._expansions[lhs]
+        return self._expansions.get(lhs, [])
 
     def is_nonterminal(self, symbol: str) -> bool:
         """Is symbol a nonterminal symbol?"""
         return symbol in self._expansions
 
+    def specialize(self, tokens: List[str]) -> Grammar:
+        """Return a new Grammar instance that only includes rules that produce terminals in tokens."""
+        specialized_grammar = Grammar(self.start_symbol)
+        terminals_in_sentence = set(tokens)
+        for lhs, rules in self._expansions.items():
+            specialized_rules = []
+            for rule in rules:
+                # Check if rule's terminals are in the sentence
+                terminals_in_rule = [symbol for symbol in rule.rhs if not self.is_nonterminal(symbol)]
+                if all(t in terminals_in_sentence for t in terminals_in_rule):
+                    specialized_rules.append(rule)
+            if specialized_rules:
+                specialized_grammar._expansions[lhs] = specialized_rules
+        return specialized_grammar
 
-# A dataclass is a class that provides some useful defaults for you. If you define
-# the data that the class should hold, it will automatically make things like an
-# initializer and an equality function.  This is just a shortcut.  
-# More info here: https://docs.python.org/3/library/dataclasses.html
-# Using a dataclass here lets us declare that instances are "frozen" (immutable),
-# and therefore can be hashed and used as keys in a dictionary.
 @dataclass(frozen=True)
 class Rule:
     """
     A grammar rule has a left-hand side (lhs), a right-hand side (rhs), and a weight.
-
-    >>> r = Rule('S',('NP','VP'),3.14)
-    >>> r
-    S → NP VP
-    >>> r.weight
-    3.14
-    >>> r.weight = 2.718
-    Traceback (most recent call last):
-    dataclasses.FrozenInstanceError: cannot assign to field 'weight'
     """
     lhs: str
     rhs: Tuple[str, ...]
@@ -246,28 +251,20 @@ class Rule:
 
     def __repr__(self) -> str:
         """Complete string used to show this rule instance at the command line"""
-        # Note: You might want to modify this to include the weight.
         return f"{self.lhs} → {' '.join(self.rhs)}"
 
-    
-# We particularly want items to be immutable, since they will be hashed and 
-# used as keys in a dictionary (for duplicate detection).  
 @dataclass(frozen=True)
 class Item:
-    """An item in the Earley parse chart, representing one or more subtrees
-    that could yield a particular substring."""
+    """An item in the Earley parse chart."""
     rule: Rule
     dot_position: int
     start_position: int
-    # We don't store the end_position, which corresponds to the column
-    # that the item is in, although you could store it redundantly for 
-    # debugging purposes if you wanted.
-    weight: float = 0.0  # tracking weights added
-    backpointer: Optional[Tuple[Any, Any]] = None   # Backpointers added
+    weight: float = 0.0
+    backpointer: Optional[Tuple[Any, Any]] = None
     children: Tuple[Any, ...] = ()
     
     def next_symbol(self) -> Optional[str]:
-        """What's the next, unprocessed symbol (terminal, non-terminal, or None) in this partially matched rule?"""
+        """Next unprocessed symbol."""
         assert 0 <= self.dot_position <= len(self.rule.rhs)
         if self.dot_position == len(self.rule.rhs):
             return None
@@ -290,12 +287,11 @@ class Item:
 
     def __repr__(self) -> str:
         """Human-readable representation string used when printing this item."""
-        # Note: If you revise this class to change what an Item stores, you'll probably want to change this method too.
         DOT = "·"
         rhs = list(self.rule.rhs)  # Make a copy.
         rhs.insert(self.dot_position, DOT)
         dotted_rule = f"{self.rule.lhs} → {' '.join(rhs)}"
-        return f"({self.start_position}, {dotted_rule}, weight={self.weight:.4f})"  # matches notation on slides
+        return f"({self.start_position}, {dotted_rule}, weight={self.weight:.4f})"
 
 def print_parse(item: Item) -> str:
     if len(item.children) == 0:
@@ -323,15 +319,14 @@ def main():
         for sentence in f.readlines():
             sentence = sentence.strip()
             if sentence:
-                chart = EarleyChart(sentence.split(), grammar, progress=args.progress)
+                tokens = sentence.split()
+                chart = EarleyChart(tokens, grammar, progress=args.progress)
                 best_item = None
                 for item in chart.cols[-1].all():
                     if (item.rule.lhs == args.start_symbol and item.next_symbol() is None and item.start_position == 0):
-                        # Keep track of the item with the lowest weight
                         if best_item is None or item.weight < best_item.weight:
                             best_item = item
                 if best_item:
-                    # Print the parse tree with cumulative weight
                     print(f"{print_parse(best_item)} (Weight: {best_item.weight:.10f})")
                 else:
                     print("NONE")
