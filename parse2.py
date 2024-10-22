@@ -327,7 +327,7 @@ def main():
                         if best_item is None or item.weight < best_item.weight:
                             best_item = item
                 if best_item:
-                    print(f"{print_parse(best_item)} (Weight: {best_item.weight:.10f})")
+                    print(f"{print_parse(best_item)} (Weight: {best_item.weight:.14f})")
                 else:
                     print("NONE")
             else:

@@ -11,6 +11,7 @@ from pathlib import Path
 from collections import Counter
 from typing import Counter as CounterType, Iterable, List, Optional, Dict, Tuple
 from typing import Any
+from decimal import Decimal
 
 log = logging.getLogger(Path(__file__).stem)  # For usage, see findsim.py in earlier assignment.
 
@@ -315,26 +316,33 @@ def print_parse(item: Item) -> str:
 def main():
     # Parse the command-line arguments
     args = parse_args()
-    logging.basicConfig(level=args.logging_level) 
+    logging.basicConfig(level=args.logging_level)
 
     grammar = Grammar(args.start_symbol, args.grammar)
 
     with open(args.sentences) as f:
         for sentence in f.readlines():
-            sentence = sentence.strip()
-            if sentence:
-                chart = EarleyChart(sentence.split(), grammar, progress=args.progress)
-                best_item = None
-                for item in chart.cols[-1].all():
-                    if (item.rule.lhs == args.start_symbol and item.next_symbol() is None and item.start_position == 0):
-                        # Keep track of the item with the lowest weight
-                        if best_item is None or item.weight < best_item.weight:
-                            best_item = item
-                if best_item:
-                    # Print the parse tree with cumulative weight
-                    print(f"{print_parse(best_item)} (Weight: {best_item.weight:.10f})")
-                else:
-                    print("NONE")
+            sentence = sentence.strip()  # Strip leading/trailing whitespace
+            if not sentence:
+                continue  # Skip empty lines
+
+            # Process non-empty sentences
+            chart = EarleyChart(sentence.split(), grammar, progress=args.progress)
+            best_item = None
+
+            # Find the best parse with the lowest weight
+            for item in chart.cols[-1].all():
+                if (item.rule.lhs == args.start_symbol and 
+                    item.next_symbol() is None and 
+                    item.start_position == 0):
+                    
+                    if best_item is None or item.weight < best_item.weight:
+                        best_item = item
+
+            # Print the parse if found; otherwise, print "NONE"
+            if best_item:
+                weight_str = Decimal(best_item.weight).quantize(Decimal('1.00000000000000'))
+                print(f"{print_parse(best_item)} {weight_str}")
             else:
                 print("NONE")
 
