@@ -15,15 +15,36 @@ log = logging.getLogger(Path(__file__).stem)
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("grammar", type=Path, help="Path to .gr file containing a PCFG")
-    parser.add_argument("sentences", type=Path, help="Path to .sen file containing tokenized input sentences")
-    parser.add_argument("-s", "--start_symbol", type=str, default="ROOT", help="Start symbol of the grammar")
-    parser.add_argument("--progress", action="store_true", default=False, help="Display a progress bar")
+    parser.add_argument(
+        "grammar", type=Path, help="Path to .gr file containing a PCFG'"
+    )
+    parser.add_argument(
+        "sentences", type=Path, help="Path to .sen file containing tokenized input sentences"
+    )
+    parser.add_argument(
+        "-s",
+        "--start_symbol", 
+        type=str,
+        help="Start symbol of the grammar (default is ROOT)",
+        default="ROOT",
+    )
 
+    parser.add_argument(
+        "--progress", 
+        action="store_true",
+        help="Display a progress bar",
+        default=False,
+    )
+
+    # for verbosity of logging
     parser.set_defaults(logging_level=logging.INFO)
     verbosity = parser.add_mutually_exclusive_group()
-    verbosity.add_argument("-v", "--verbose", dest="logging_level", action="store_const", const=logging.DEBUG)
-    verbosity.add_argument("-q", "--quiet", dest="logging_level", action="store_const", const=logging.WARNING)
+    verbosity.add_argument(
+        "-v", "--verbose", dest="logging_level", action="store_const", const=logging.DEBUG
+    )
+    verbosity.add_argument(
+        "-q", "--quiet",   dest="logging_level", action="store_const", const=logging.WARNING
+    )
 
     return parser.parse_args()
 
