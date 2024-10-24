@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-
 from __future__ import annotations
 import argparse
 import logging
@@ -68,15 +67,12 @@ class EarleyChart:
 
 
     def accepted(self) -> bool:
-        """Was the sentence accepted?
-        That is, does the finished chart contain an item corresponding to a parse of the sentence?
-        This method answers the recognition question, but not the parsing question."""
-        for item in self.cols[-1].all():    # the last column
-            if (item.rule.lhs == self.grammar.start_symbol   # a ROOT item in this column
-                and item.next_symbol() is None               # that is complete 
-                and item.start_position == 0):               # and started back at position 0
+        for item in self.cols[-1].all():
+            if (item.rule.lhs == self.grammar.start_symbol
+                and item.next_symbol() is None
+                and item.start_position == 0):
                     return True
-        return False   # we didn't find any appropriate item
+        return False
 
     def _run_earley(self) -> None:
         """Fill in the Earley chart."""
@@ -116,13 +112,8 @@ class EarleyChart:
     def _predict(self, nonterminal: str, position: int) -> None:
         """Batch predict all rules for a non-terminal, if not already predicted."""
         if nonterminal in self.predicted_set[position]:
-            # Skip if this nonterminal has already been predicted in this column
             return
-
-        # Mark the non-terminal as predicted for this column
         self.predicted_set[position].add(nonterminal)
-
-        # Add all expansions of the non-terminal to the column
         for rule in self.grammar.expansions(nonterminal):
             new_item = Item(rule, dot_position=0, start_position=position, weight=rule.weight)
             self.cols[position].push(new_item)
@@ -149,7 +140,7 @@ class Agenda:
     def __init__(self) -> None:
         self._items: List[Item] = []
         self._index: Dict[Item, int] = {}
-        self._next_symbol_index: Dict[str, List[Item]] = {}  # Index by next symbol
+        self._next_symbol_index: Dict[str, List[Item]] = {}
         self._next = 0
 
     def __len__(self) -> int:
@@ -306,7 +297,7 @@ def main():
                 continue
 
             tokens = sentence.split()
-            grammar.filter_rules(tokens)  # Filter rules based on the sentence vocabulary
+            grammar.filter_rules(tokens)
 
             chart = EarleyChart(tokens, grammar, progress=args.progress)
             best_item = None

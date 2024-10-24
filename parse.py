@@ -224,10 +224,10 @@ class Grammar:
 
 @dataclass(frozen=True)
 class Rule:
-
     lhs: str
     rhs: Tuple[str, ...]
     weight: float
+
 
     def __repr__(self) -> str:
         return f"{self.lhs} → {' '.join(self.rhs)}"
@@ -239,7 +239,7 @@ class Item:
     start_position: int
     weight: float = 0.0  # tracking weights added
     backpointer: Optional[Tuple[Any, Any]] = None   # Backpointers added
-    children: Tuple[Any, ...] = ()
+    children: Tuple[Any, ...] = () #children added for better parse tree representation
     
     def next_symbol(self) -> Optional[str]:
         """What's the next, unprocessed symbol (terminal, non-terminal, or None) in this partially matched rule?"""
@@ -294,15 +294,13 @@ def main():
 
     with open(args.sentences) as f:
         for sentence in f.readlines():
-            sentence = sentence.strip()  # Strip leading/trailing whitespace
+            sentence = sentence.strip()
             if not sentence:
-                continue  # Skip empty lines
+                continue
 
-            # Process non-empty sentences
             chart = EarleyChart(sentence.split(), grammar, progress=args.progress)
             best_item = None
 
-            # Find the best parse with the lowest weight
             for item in chart.cols[-1].all():
                 if (item.rule.lhs == args.start_symbol and 
                     item.next_symbol() is None and 
@@ -311,9 +309,7 @@ def main():
                     if best_item is None or item.weight < best_item.weight:
                         best_item = item
 
-            # Print the parse if found; otherwise, print "NONE"
             if best_item:
-                # Print the parse tree with cumulative weight
                 print(f"{print_parse(best_item)} {best_item.weight}")
             else:
                 print("NONE")
